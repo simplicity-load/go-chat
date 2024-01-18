@@ -1,0 +1,7 @@
+# nix
+.direnv/
+
+# ssh keys
+.ssh/
+
+*.db
