@@ -1,105 +1,146 @@
 package main
 
 import (
-	"flag"
+	"fmt"
 	"log"
+	"os"
+	"strings"
 	"sync"
 
-	"github.com/gofiber/contrib/websocket"
+	ws "github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
 )
 
-func Main() {
+// AUTH="user1:pass1;user2:pass2;user3:pass3"
+func getUsers() map[string]string {
+	a := make(map[string]string)
+	if val, ok := os.LookupEnv("AUTH"); ok {
+		authList := strings.Split(val, ";")
+		for _, auth := range authList {
+			namePass := strings.Split(auth, ":")
+			a[namePass[0]] = namePass[1]
+		}
+	}
+	a["admin"] = "super"
+	return a
+}
+
+func main() {
 	app := fiber.New()
 
-	app.Static("/", "./home.html")
+	app.Use(basicauth.New(basicauth.Config{
+		Users:           getUsers(),
+		ContextUsername: "_user",
+		ContextPassword: "_pass",
+	}))
+
+	app.Static("/", "./index.html")
 
 	app.Use(func(c *fiber.Ctx) error {
-		if websocket.IsWebSocketUpgrade(c) { // Returns true if the client requested upgrade to the WebSocket protocol
+		if ws.IsWebSocketUpgrade(c) {
 			return c.Next()
 		}
 		return c.SendStatus(fiber.StatusUpgradeRequired)
 	})
 
-	go runHub()
+	go listenLoop()
 
-	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
-		// When the function returns, unregister the client and close the connection
+	app.Post("/files", func(c *fiber.Ctx) error {
+		file, err := c.FormFile("document")
+		if err != nil {
+			return fiber.ErrBadRequest
+		}
+		filename := fmt.Sprintf("./%s", file.Filename)
+		if err := c.SaveFile(file, filename); err != nil {
+			return fiber.ErrInternalServerError
+		}
+		broadcast <- &message{
+			sender:  c.Locals("_user").(string),
+			msgType: "media",
+			msg:     filename,
+		}
+		return nil
+	})
+
+	app.Get("/ws", ws.New(func(c *ws.Conn) {
+		// Unregister on close
 		defer func() {
 			unregister <- c
 			c.Close()
 		}()
 
-		// Register the client
+		// Register
 		register <- c
 
+		// Listen for messages
 		for {
-			messageType, message, err := c.ReadMessage()
+			msgType, msg, err := c.ReadMessage()
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Println("read error:", err)
-				}
-
-				return // Calls the deferred function, i.e. closes the connection on error
+				return
 			}
 
-			if messageType == websocket.TextMessage {
-				// Broadcast the received message
-				broadcast <- string(message)
-			} else {
-				log.Println("websocket message received of type", messageType)
+			if msgType == ws.TextMessage {
+				broadcast <- &message{
+					sender:  c.Locals("_user").(string),
+					msgType: "text",
+					msg:     string(msg),
+				}
 			}
 		}
 	}))
 
-	addr := flag.String("addr", ":8080", "http service address")
-	flag.Parse()
-	log.Fatal(app.Listen(*addr))
+	app.Listen(":8080")
 }
 
-// Add more data to this type if needed
 type client struct {
+	sync.Mutex
 	isClosing bool
-	mu        sync.Mutex
 }
 
-var clients = make(map[*websocket.Conn]*client) // Note: although large maps with pointer-like types (e.g. strings) as keys are slow, using pointers themselves as keys is acceptable and fast
-var register = make(chan *websocket.Conn)
-var broadcast = make(chan string)
-var unregister = make(chan *websocket.Conn)
+type message struct {
+	sender  string
+	msgType string
+	msg     string
+}
 
-func runHub() {
+var clients = make(map[*ws.Conn]*client)
+
+var register = make(chan *ws.Conn)
+var broadcast = make(chan *message)
+var unregister = make(chan *ws.Conn)
+
+func listenLoop() {
 	for {
 		select {
-		case connection := <-register:
-			clients[connection] = &client{}
+		case conn := <-register:
 			log.Println("connection registered")
-
+			clients[conn] = &client{}
 		case message := <-broadcast:
-			log.Println("message received:", message)
-			// Send the message to all clients
-			for connection, c := range clients {
-				go func(connection *websocket.Conn, c *client) { // send to each client in parallel so we don't block on a slow client
-					c.mu.Lock()
-					defer c.mu.Unlock()
+			log.Println("message:", message)
+			for conn, c := range clients {
+				go func(conn *ws.Conn, c *client) {
+					c.Lock()
+					defer c.Unlock()
+
 					if c.isClosing {
 						return
 					}
-					if err := connection.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+
+					fmtMsg := fmt.Sprintf("%s: %s", message.sender, message.msg)
+					err := conn.WriteMessage(ws.TextMessage, []byte(fmtMsg))
+					if err != nil {
+						log.Println("message failed, closing")
 						c.isClosing = true
-						log.Println("write error:", err)
 
-						connection.WriteMessage(websocket.CloseMessage, []byte{})
-						connection.Close()
-						unregister <- connection
+						conn.WriteMessage(ws.CloseMessage, []byte{})
+						conn.Close()
+						unregister <- conn
 					}
-				}(connection, c)
+				}(conn, c)
 			}
-
-		case connection := <-unregister:
-			// Remove the client from the hub
-			delete(clients, connection)
-
+		case conn := <-unregister:
+			delete(clients, conn)
 			log.Println("connection unregistered")
 		}
 	}
