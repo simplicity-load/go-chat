@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -14,16 +15,17 @@ import (
 
 // AUTH="user1:pass1;user2:pass2;user3:pass3"
 func getUsers() map[string]string {
-	a := make(map[string]string)
+	users := make(map[string]string)
 	if val, ok := os.LookupEnv("AUTH"); ok {
 		authList := strings.Split(val, ";")
 		for _, auth := range authList {
 			namePass := strings.Split(auth, ":")
-			a[namePass[0]] = namePass[1]
+			users[namePass[0]] = namePass[1]
 		}
+		return users
 	}
-	a["admin"] = "super"
-	return a
+	users["admin"] = "super"
+	return users
 }
 
 func main() {
@@ -35,7 +37,7 @@ func main() {
 		ContextPassword: "_pass",
 	}))
 
-	app.Static("/", "./index.html")
+	app.Static("/", "./public/")
 
 	app.Use(func(c *fiber.Ctx) error {
 		if ws.IsWebSocketUpgrade(c) {
@@ -56,9 +58,9 @@ func main() {
 			return fiber.ErrInternalServerError
 		}
 		broadcast <- &message{
-			sender:  c.Locals("_user").(string),
-			msgType: "media",
-			msg:     filename,
+			Author:  c.Locals("_user").(string),
+			MsgType: "media",
+			Body:    filename,
 		}
 		return nil
 	})
@@ -82,15 +84,19 @@ func main() {
 
 			if msgType == ws.TextMessage {
 				broadcast <- &message{
-					sender:  c.Locals("_user").(string),
-					msgType: "text",
-					msg:     string(msg),
+					Author:  c.Locals("_user").(string),
+					MsgType: "text",
+					Body:    string(msg),
 				}
 			}
 		}
 	}))
 
-	app.Listen(":8080")
+	addr := "8080"
+	if val, ok := os.LookupEnv("PORT"); ok {
+		addr = val
+	}
+	log.Fatal(app.Listen(":" + addr))
 }
 
 type client struct {
@@ -99,9 +105,9 @@ type client struct {
 }
 
 type message struct {
-	sender  string
-	msgType string
-	msg     string
+	MsgType string `json:"msgType"`
+	Author  string `json:"author"`
+	Body    string `json:"body"`
 }
 
 var clients = make(map[*ws.Conn]*client)
@@ -114,10 +120,10 @@ func listenLoop() {
 	for {
 		select {
 		case conn := <-register:
-			log.Println("connection registered")
+			log.Println("client registered")
 			clients[conn] = &client{}
 		case message := <-broadcast:
-			log.Println("message:", message)
+			// log.Printf("message: %s", message)
 			for conn, c := range clients {
 				go func(conn *ws.Conn, c *client) {
 					c.Lock()
@@ -127,8 +133,11 @@ func listenLoop() {
 						return
 					}
 
-					fmtMsg := fmt.Sprintf("%s: %s", message.sender, message.msg)
-					err := conn.WriteMessage(ws.TextMessage, []byte(fmtMsg))
+					jsonMsg, err := json.Marshal(&message)
+					if err != nil {
+						log.Println("jsonerr:", err)
+					}
+					err = conn.WriteMessage(ws.TextMessage, []byte(jsonMsg))
 					if err != nil {
 						log.Println("message failed, closing")
 						c.isClosing = true

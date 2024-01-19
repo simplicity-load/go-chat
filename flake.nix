@@ -25,6 +25,7 @@
             gocode-gomod
             godef
             golint
+            typescript
           ];
         };
       });
