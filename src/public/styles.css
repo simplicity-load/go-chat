@@ -66,6 +66,22 @@ html, body {
   background: #b6b6b644;
 }
 
+#videoMessage {
+  height: 300px;
+}
+
+#audioMessage {
+  height: 50px;
+}
+
+#imageMessage {
+  line-height: 0;
+}
+#imageMessage > img {
+  height: 300px;
+}
+
+
 #inputContainer {
   max-height: 60px;
   margin-left: 5%;

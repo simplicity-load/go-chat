@@ -15,12 +15,14 @@
     <div class="round" id="messagesContainer">
     </div>
     <form id="inputContainer">
-      <button class="inputButton round" type="button" role="button"><img class="inputIcon"
-          src="media/upload.svg" /></button>
+      <button class="inputButton round" type="button" onclick="document.getElementById('uploadFile').click();"><img
+          class="inputIcon" src="media/upload.svg" /></button>
       <input class="round" type="text" id="messageInput" autofocus autocomplete="off" />
-      <button class="inputButton round" type="submit" role="button"><img class="inputIcon"
-          src="media/send.svg" /></button>
+      <button class="inputButton round" type="submit" role="button"><img class="inputIcon" src="media/send.svg"
+          onclick="console.log('wow');" /></button>
     </form>
+    <!-- Hidden Upload Input -->
+    <input type="file" id="uploadFile" style="display: none;">
   </div>
 </body>
 

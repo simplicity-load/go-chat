@@ -10,18 +10,40 @@ Non persistent chat (go) server and (js) client to instantly chat with whomever 
     super awesome image ^^
 </div>
 
-## Compile TS
+## Features
 
-`tsc src/index.ts --outDir src/public/`
+- Only one chat room
+- Text messages :D
+- File upload & display
 
-## Run server
+Todo:
 
-`go run .` and visit http://localhost:8080
+- Multiple chat rooms
 
-Specify user credentials:
+## Quick start
 
-`AUTH="user1:pass1;user2:pass2;user3:ssap3" go run .`
+Switch to the `src/` directory.
 
-Specify port:
+Optionally compile the `index.ts` into `index.js`:
 
-`PORT="80" go run .`
+`tsc`
+
+Run the server:
+
+`go run .`
+
+Visit `http://localhost:8080` and login as `admin` with `cutest` as password.
+
+## Configuration
+
+The server accepts the following environment variables:
+
+| OPTION                    | DEFAULTS                      | DESCRIPTION                 |
+|---------------------------|-------------------------------|-----------------------------|
+| `PORT`                    | `8080`                        | Server's port               |
+| `AUTH`                    | `admin:cutest;dio:itwas`      | Users and their credentials |
+| `MAX_FILE_SIZE`           | `128`                         | Max file upload size (MiB)  |
+
+Example config:
+
+`PORT="80" AUTH="alice:wonderland;bob:fatherland;jojo:painland" MAX_FILE_SIZE="21" go run .`

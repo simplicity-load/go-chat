@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -13,48 +17,78 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 )
 
-// AUTH="user1:pass1;user2:pass2;user3:pass3"
-func getUsers() map[string]string {
+func getUsers(authString string) map[string]string {
 	users := make(map[string]string)
-	if val, ok := os.LookupEnv("AUTH"); ok {
-		authList := strings.Split(val, ";")
-		for _, auth := range authList {
-			namePass := strings.Split(auth, ":")
-			users[namePass[0]] = namePass[1]
-		}
-		return users
+	authList := strings.Split(authString, ";")
+	for _, auth := range authList {
+		namePass := strings.Split(auth, ":")
+		users[namePass[0]] = namePass[1]
 	}
-	users["admin"] = "super"
 	return users
 }
 
+const (
+	STATIC_FILES = "public/"
+	USER_UPLOADS = "upload/"
+)
+
+// Defaults
+const (
+	PORT          = "8080"
+    AUTH          = "admin:cutest;dio:itwas"
+	MAX_FILE_SIZE = "128" // in MiB
+)
+
+func getEnv(key string, inLieuOf string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return inLieuOf
+}
+
 func main() {
-	app := fiber.New()
+	addr := getEnv("PORT", PORT)
+	authList := getEnv("AUTH", AUTH)
+	maxFileSize := getEnv("MAX_FILE_SIZE", MAX_FILE_SIZE)
+	parsedMaxFileSize, _ := strconv.Atoi(maxFileSize)
+
+	app := fiber.New(fiber.Config{
+		BodyLimit: parsedMaxFileSize * 1024 * 1024,
+	})
 
 	app.Use(basicauth.New(basicauth.Config{
-		Users:           getUsers(),
+		Users:           getUsers(authList),
 		ContextUsername: "_user",
 		ContextPassword: "_pass",
 	}))
 
-	app.Static("/", "./public/")
+	app.Static("/", STATIC_FILES)
 
-	app.Use(func(c *fiber.Ctx) error {
-		if ws.IsWebSocketUpgrade(c) {
-			return c.Next()
-		}
-		return c.SendStatus(fiber.StatusUpgradeRequired)
-	})
-
-	go listenLoop()
-
-	app.Post("/files", func(c *fiber.Ctx) error {
-		file, err := c.FormFile("document")
+	app.Post("/upload", func(c *fiber.Ctx) error {
+		file, err := c.FormFile("media")
 		if err != nil {
+			log.Println("formfile:", err)
 			return fiber.ErrBadRequest
 		}
-		filename := fmt.Sprintf("./%s", file.Filename)
-		if err := c.SaveFile(file, filename); err != nil {
+		f, err := file.Open()
+		if err != nil {
+			log.Println("fileOpen:", err)
+			return fiber.ErrInternalServerError
+		}
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err != nil {
+			log.Println("filecopy:", err)
+			return fiber.ErrInternalServerError
+		}
+		fileExtension := filepath.Ext(file.Filename)
+		filename := fmt.Sprintf("%s%x%s", USER_UPLOADS, h.Sum(nil), fileExtension)
+		saveDir := STATIC_FILES + filename
+		if err := os.MkdirAll(filepath.Dir(saveDir), 0777); err != nil {
+			log.Println("mkdirAll: ", err)
+			return fiber.ErrInternalServerError
+		}
+		if err := c.SaveFile(file, saveDir); err != nil {
+			log.Println("saveFile: ", err)
 			return fiber.ErrInternalServerError
 		}
 		broadcast <- &message{
@@ -65,7 +99,17 @@ func main() {
 		return nil
 	})
 
-	app.Get("/ws", ws.New(func(c *ws.Conn) {
+	wsGroup := app.Group("/ws")
+	wsGroup.Use(func(c *fiber.Ctx) error {
+		if ws.IsWebSocketUpgrade(c) {
+			return c.Next()
+		}
+		return c.SendStatus(fiber.StatusUpgradeRequired)
+	})
+
+	go listenLoop()
+
+	wsGroup.Get("/", ws.New(func(c *ws.Conn) {
 		// Unregister on close
 		defer func() {
 			unregister <- c
@@ -92,10 +136,6 @@ func main() {
 		}
 	}))
 
-	addr := "8080"
-	if val, ok := os.LookupEnv("PORT"); ok {
-		addr = val
-	}
 	log.Fatal(app.Listen(":" + addr))
 }
 

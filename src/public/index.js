@@ -1,10 +1,42 @@
-var leftPad = function (val) { return val < 10 ? "0".concat(val) : "".concat(val); };
+"use strict";
+const getFileExtension = (filepath) => filepath.slice((filepath.lastIndexOf(".") - 1 >>> 0) + 2);
+const ctob = (a) => a.charCodeAt(0);
+function stringToColor(value) {
+    const bytes = Array.from(value.toLowerCase())
+        .map(char => ctob(char))
+        .map(char => scaleRange(char, ctob('a'), ctob('z'), 0, 128));
+    if (bytes.length < 3)
+        return '#292929';
+    return `rgb(${bytes[1]}, ${bytes[0]}, ${bytes[2]})`;
+}
+const scaleRange = (value, fromMin, fromMax, toMin, toMax) => Math.floor((value - fromMin) * (toMax - toMin) / (fromMax - fromMin) + toMin);
 window.onload = function () {
+    const MessageTypes = { 'text': 'text', 'media': 'media' };
     var conn;
     var msgInput = document.getElementById("messageInput");
     var form = document.getElementById("inputContainer");
     var log = document.getElementById("messagesContainer");
-    var onSubmit = function () {
+    var upload = document.getElementById("uploadFile");
+    const onUpload = () => {
+        if (!upload || !upload.files)
+            return false;
+        const data = new FormData();
+        data.append('media', upload.files[0]);
+        fetch('/upload', {
+            method: 'POST',
+            body: data
+        }).then(response => {
+            var _a;
+            const message = (_a = {
+                200: '',
+                413: 'File too big!',
+            }[response.status]) !== null && _a !== void 0 ? _a : 'Failed sending file!';
+            sysMessage(message);
+        });
+        return false;
+    };
+    upload === null || upload === void 0 ? void 0 : upload.addEventListener('change', onUpload, false);
+    const onSubmit = () => {
         if (!conn || !(msgInput === null || msgInput === void 0 ? void 0 : msgInput.value))
             return false;
         conn.send(msgInput.value);
@@ -12,32 +44,52 @@ window.onload = function () {
         return false;
     };
     form.onsubmit = onSubmit;
-    var templateToHTML = function (template) {
-        var element = document.createElement("template");
+    const templateToHTML = (template) => {
+        const element = document.createElement("template");
         element.innerHTML = template;
-        var html = element.content.children;
+        const html = element.content.children;
         if (html.length === 1)
             return html[0];
         return null;
     };
-    var authorTemplate = function (author) {
-        var time = new Date();
-        var options = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-        var formattedTime = new Intl.DateTimeFormat('en-US', options).format(time);
-        return "\n      <div id=\"left\">\n        <div id=\"author\">".concat(author, "</div>\n        <div id=\"time\">").concat(formattedTime, "</div>\n      </div>\n    ");
+    const authorTemplate = (author) => {
+        const time = new Date();
+        let options = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+        let formattedTime = new Intl.DateTimeFormat('en-US', options).format(time);
+        const nameColor = stringToColor(author);
+        return `
+      <div id="left">
+        <div style="color: ${nameColor};" id="author">${author}</div>
+        <div id="time">${formattedTime}</div>
+      </div>
+    `;
     };
-    var messageTemplate = function (content) {
-        return "<div id=\"right\">".concat(content, "</div>");
+    const messageTemplate = (content) => `<div id="right">${content}</div>`;
+    const getMessageContent = (msg) => {
+        if (!MessageTypes[msg.msgType])
+            return 'Unkown Message Type';
+        if (MessageTypes.text === msg.msgType)
+            return msg.body;
+        const video = ['mp4', 'webm', 'mkv', 'avi', 'mov', 'wmv', 'flv'];
+        const audio = ['mp3', 'flac', 'wav', 'ogg', 'aac', 'm4a', 'wma'];
+        const image = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'tiff'];
+        const extension = getFileExtension(msg.body).toLowerCase();
+        if (video.includes(extension))
+            return `<video id="videoMessage" controls src="${msg.body}">No support for video</video>`;
+        if (audio.includes(extension))
+            return `<audio id="audioMessage" controls src="${msg.body}">No support for audio</audio>`;
+        if (image.includes(extension))
+            return `<a id="imageMessage" href="${msg.body}" target="_blank"><img src="${msg.body}"/></a>`;
+        return `<a href="${msg.body}" download="file.${extension}">file.${extension}</a>`;
     };
-    var renderMessage = function (msg) {
+    const renderMessage = (msg) => {
         if (!log)
             return;
-        // check for message type
-        // const type = msg.msgType
-        var author = authorTemplate(msg.author);
-        var content = messageTemplate(msg.body);
-        var authorDiv = templateToHTML(author);
-        var contentDiv = templateToHTML(content);
+        const messageContent = getMessageContent(msg);
+        const author = authorTemplate(msg.author);
+        const content = messageTemplate(messageContent);
+        const authorDiv = templateToHTML(author);
+        const contentDiv = templateToHTML(content);
         var doScroll = log.scrollTop > log.scrollHeight - log.clientHeight - 1;
         log.appendChild(authorDiv);
         log.appendChild(contentDiv);
@@ -45,19 +97,21 @@ window.onload = function () {
             log.scrollTop = log.scrollHeight - log.clientHeight;
         }
     };
-    var sysMessage = function (message) {
+    const sysMessage = (message) => {
+        if (!message)
+            return;
         renderMessage({
             msgType: "text",
             author: "sys",
             body: message,
         });
     };
-    var createWebsocket = function () {
-        var host = "ws://" + document.location.host + "/ws";
-        var conn = new WebSocket(host);
-        conn.onclose = function () { return sysMessage('Connection Closed!'); };
-        conn.onmessage = function (event) {
-            var msg = JSON.parse(event.data);
+    const createWebsocket = () => {
+        const host = "ws://" + document.location.host + "/ws";
+        const conn = new WebSocket(host);
+        conn.onclose = () => sysMessage('Connection Closed!');
+        conn.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
             if (!msg)
                 return;
             renderMessage(msg);
