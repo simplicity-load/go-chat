@@ -2,6 +2,7 @@
 with pkgs;
 mkShell {
   buildInputs = [
+    git
     go
     gotools
     go-tools
@@ -17,5 +18,6 @@ mkShell {
 
   shellHook = ''
     echo "Welcome to the SHELL!"
+    git config core.hooksPath .hooks
   '';
 }
