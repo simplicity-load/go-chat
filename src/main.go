@@ -35,7 +35,7 @@ const (
 // Defaults
 const (
 	PORT          = "8080"
-    AUTH          = "admin:cutest;dio:itwas"
+	AUTH          = "admin:cutest;dio:itwas"
 	MAX_FILE_SIZE = "128" // in MiB
 )
 

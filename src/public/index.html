@@ -1,29 +1,52 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+  <head>
+    <title>THE CHAT</title>
+    <script type="text/javascript" src="/index.js"></script>
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/media/apple-touch-icon.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/media/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/media/favicon-16x16.png"
+    />
+  </head>
 
-<head>
-  <title>THE CHAT</title>
-  <script type="text/javascript" src="/index.js"></script>
-  <link rel="stylesheet" href="/styles.css" />
-  <link rel="apple-touch-icon" sizes="180x180" href="/media/apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="32x32" href="/media/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/media/favicon-16x16.png">
-</head>
-
-<body>
-  <div id="container">
-    <div class="round" id="messagesContainer">
+  <body>
+    <div id="container">
+      <div class="round" id="messagesContainer"></div>
+      <form id="inputContainer">
+        <button
+          class="inputButton round"
+          type="button"
+          onclick="document.getElementById('uploadFile').click();"
+        >
+          <img class="inputIcon" src="media/upload.svg" />
+        </button>
+        <input
+          class="round"
+          type="text"
+          id="messageInput"
+          autofocus
+          autocomplete="off"
+        />
+        <button class="inputButton round" type="submit" role="button">
+          <img class="inputIcon" src="media/send.svg" />
+        </button>
+      </form>
+      <!-- Hidden Upload Input -->
+      <input type="file" id="uploadFile" style="display: none" />
     </div>
-    <form id="inputContainer">
-      <button class="inputButton round" type="button" onclick="document.getElementById('uploadFile').click();"><img
-          class="inputIcon" src="media/upload.svg" /></button>
-      <input class="round" type="text" id="messageInput" autofocus autocomplete="off" />
-      <button class="inputButton round" type="submit" role="button"><img class="inputIcon" src="media/send.svg"
-          onclick="console.log('wow');" /></button>
-    </form>
-    <!-- Hidden Upload Input -->
-    <input type="file" id="uploadFile" style="display: none;">
-  </div>
-</body>
-
+  </body>
 </html>
