@@ -21,16 +21,21 @@ const scaleRange = (
     ((value - fromMin) * (toMax - toMin)) / (fromMax - fromMin) + toMin,
   );
 
+const videoExts = ["mp4", "webm", "mkv", "avi", "mov", "wmv", "flv"];
+const audioExts = ["mp3", "flac", "wav", "ogg", "aac", "m4a", "wma"];
+const imageExts = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "tiff"];
+
 window.onload = function () {
   type Message = {
     msgType: string;
     author: string;
     body: string;
   };
-  const MessageTypes: Partial<Record<string, string>> = {
+  const MessageTypes: Record<string, string> = {
     text: "text",
     media: "media",
-  } as const;
+    server: "server",
+  };
 
   var conn: WebSocket | undefined;
   var msgInput = document.getElementById("messageInput") as HTMLInputElement;
@@ -41,7 +46,7 @@ window.onload = function () {
   const onUpload = () => {
     if (!upload || !upload.files) return false;
     const data = new FormData();
-    data.append("media", upload.files[0]);
+    data.append(MessageTypes.media, upload.files[0]);
     fetch("/upload", {
       method: "POST",
       body: data,
@@ -51,7 +56,7 @@ window.onload = function () {
           200: "",
           413: "File too big!",
         }[response.status] ?? "Failed sending file!";
-      sysMessage(message);
+      clientMessage(message);
     });
     return false;
   };
@@ -94,20 +99,24 @@ window.onload = function () {
   const messageTemplate = (content: string) =>
     `<div id="right">${content}</div>`;
 
+  const mediaTemplate = (extension: string, mediaUrl: string) => {
+    if (videoExts.includes(extension))
+      return `<video id="videoMessage" controls src="${mediaUrl}">No support for video</video>`;
+    if (audioExts.includes(extension))
+      return `<audio id="audioMessage" controls src="${mediaUrl}">No support for audio</audio>`;
+    if (imageExts.includes(extension))
+      return `<a id="imageMessage" href="${mediaUrl}" target="_blank"><img src="${mediaUrl}"/></a>`;
+    return `<a href="${mediaUrl}" download="file.${extension}">file.${extension}</a>`;
+  };
+
   const getMessageContent = (msg: Message) => {
-    if (!MessageTypes[msg.msgType]) return "Unkown Message Type";
-    if (MessageTypes.text === msg.msgType) return msg.body;
-    const video = ["mp4", "webm", "mkv", "avi", "mov", "wmv", "flv"];
-    const audio = ["mp3", "flac", "wav", "ogg", "aac", "m4a", "wma"];
-    const image = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "tiff"];
     const extension = getFileExtension(msg.body).toLowerCase();
-    if (video.includes(extension))
-      return `<video id="videoMessage" controls src="${msg.body}">No support for video</video>`;
-    if (audio.includes(extension))
-      return `<audio id="audioMessage" controls src="${msg.body}">No support for audio</audio>`;
-    if (image.includes(extension))
-      return `<a id="imageMessage" href="${msg.body}" target="_blank"><img src="${msg.body}"/></a>`;
-    return `<a href="${msg.body}" download="file.${extension}">file.${extension}</a>`;
+    const map = {
+      [MessageTypes.text]: msg.body,
+      [MessageTypes.server]: msg.body,
+      [MessageTypes.media]: mediaTemplate(extension, msg.body),
+    };
+    return map[msg.msgType] ?? "Unkown Message Type";
   };
 
   const renderMessage = (msg: Message) => {
@@ -125,11 +134,11 @@ window.onload = function () {
     }
   };
 
-  const sysMessage = (message: string) => {
+  const clientMessage = (message: string) => {
     if (!message) return;
     renderMessage({
-      msgType: "text",
-      author: "sys",
+      msgType: MessageTypes.text,
+      author: "client",
       body: message,
     });
   };
@@ -137,7 +146,7 @@ window.onload = function () {
   const createWebsocket = (): WebSocket => {
     const host = "ws://" + document.location.host + "/ws";
     const conn = new WebSocket(host);
-    conn.onclose = () => sysMessage("Connection Closed!");
+    conn.onclose = () => clientMessage("Connection Closed!");
     conn.onmessage = (event) => {
       const msg: Message | undefined = JSON.parse(event.data);
       if (!msg) return;
@@ -148,8 +157,8 @@ window.onload = function () {
 
   if (window["WebSocket"]) {
     conn = createWebsocket();
-    sysMessage("Welcome to the chat!");
+    clientMessage("Welcome to the chat!");
   } else {
-    sysMessage("Unsupported Client!");
+    clientMessage("Unsupported Client!");
   }
 };

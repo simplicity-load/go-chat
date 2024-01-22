@@ -28,6 +28,12 @@ func getUsers(authString string) map[string]string {
 }
 
 const (
+	msgTypeText   = "text"
+	msgtypeMedia  = "media"
+	msgtypeServer = "server"
+)
+
+const (
 	STATIC_FILES = "public/"
 	USER_UPLOADS = "upload/"
 )
@@ -44,6 +50,14 @@ func getEnv(key string, inLieuOf string) string {
 		return value
 	}
 	return inLieuOf
+}
+
+func getUserF(c *fiber.Ctx) string {
+	return c.Locals("_user").(string)
+}
+
+func getUserW(c *ws.Conn) string {
+	return c.Locals("_user").(string)
 }
 
 func main() {
@@ -65,7 +79,7 @@ func main() {
 	app.Static("/", STATIC_FILES)
 
 	app.Post("/upload", func(c *fiber.Ctx) error {
-		file, err := c.FormFile("media")
+		file, err := c.FormFile(msgtypeMedia)
 		if err != nil {
 			log.Println("formfile:", err)
 			return fiber.ErrBadRequest
@@ -92,8 +106,8 @@ func main() {
 			return fiber.ErrInternalServerError
 		}
 		broadcast <- &message{
-			Author:  c.Locals("_user").(string),
-			MsgType: "media",
+			Author:  getUserF(c),
+			MsgType: msgtypeMedia,
 			Body:    filename,
 		}
 		return nil
@@ -128,8 +142,8 @@ func main() {
 
 			if msgType == ws.TextMessage {
 				broadcast <- &message{
-					Author:  c.Locals("_user").(string),
-					MsgType: "text",
+					Author:  getUserW(c),
+					MsgType: msgTypeText,
 					Body:    string(msg),
 				}
 			}
@@ -156,14 +170,24 @@ var register = make(chan *ws.Conn)
 var broadcast = make(chan *message)
 var unregister = make(chan *ws.Conn)
 
+func broadcastMessage(msg *message) {
+	broadcast <- msg
+}
+
 func listenLoop() {
 	for {
+		// Select statement will only proceed when both a
+		// send and recieve can be completed simultaneously
 		select {
 		case conn := <-register:
 			log.Println("client registered")
 			clients[conn] = &client{}
+			go broadcastMessage(&message{
+				Author:  "server",
+				MsgType: msgtypeServer,
+				Body:    fmt.Sprintf("%s joined the chat!", getUserW(conn)),
+			})
 		case message := <-broadcast:
-			// log.Printf("message: %s", message)
 			for conn, c := range clients {
 				go func(conn *ws.Conn, c *client) {
 					c.Lock()
@@ -176,8 +200,9 @@ func listenLoop() {
 					jsonMsg, err := json.Marshal(&message)
 					if err != nil {
 						log.Println("jsonerr:", err)
+						return
 					}
-					err = conn.WriteMessage(ws.TextMessage, []byte(jsonMsg))
+					err = conn.WriteMessage(ws.TextMessage, jsonMsg)
 					if err != nil {
 						log.Println("message failed, closing")
 						c.isClosing = true
@@ -191,6 +216,11 @@ func listenLoop() {
 		case conn := <-unregister:
 			delete(clients, conn)
 			log.Println("connection unregistered")
+			go broadcastMessage(&message{
+				Author:  "server",
+				MsgType: msgtypeServer,
+				Body:    fmt.Sprintf("%s left the chat!", getUserW(conn)),
+			})
 		}
 	}
 }

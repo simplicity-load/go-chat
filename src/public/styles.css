@@ -54,7 +54,7 @@ body {
   display: flex;
   align-items: center;
 
-  padding: 4px;
+  padding: 4px 8px;
   border-radius: 4px;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   max-width: 100%;
@@ -67,13 +67,19 @@ body {
   background: #b6b6b644;
 }
 
-#videoMessage {
-  height: 300px;
+#videoMessage,
+#audioMessage,
+#imageMessage {
+  margin: 4px 0px;
 }
 
-#audioMessage {
-  height: 50px;
+#videoMessage {
+  height: 350px;
 }
+
+/* #audioMessage { */
+/*   height: 50px; */
+/* } */
 
 #imageMessage {
   line-height: 0;
