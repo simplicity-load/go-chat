@@ -1,20 +1,26 @@
 package main
 
 import (
-	"crypto/sha256"
+	// "crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
+	"time"
+
+	// "io"
 	"log"
 	"os"
-	"path/filepath"
+
+	// "path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
 	ws "github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/basicauth"
+	"github.com/gofiber/fiber/v2/middleware/compress"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	// "github.com/gofiber/fiber/v2/middleware/basicauth"
 )
 
 func getUsers(authString string) map[string]string {
@@ -40,7 +46,7 @@ const (
 
 // Defaults
 const (
-	PORT          = "8080"
+	PORT          = "443"
 	AUTH          = "admin:cutest;dio:itwas"
 	MAX_FILE_SIZE = "128" // in MiB
 )
@@ -62,95 +68,106 @@ func getUserW(c *ws.Conn) string {
 
 func main() {
 	addr := getEnv("PORT", PORT)
-	authList := getEnv("AUTH", AUTH)
+	// authList := getEnv("AUTH", AUTH)
 	maxFileSize := getEnv("MAX_FILE_SIZE", MAX_FILE_SIZE)
 	parsedMaxFileSize, _ := strconv.Atoi(maxFileSize)
 
 	app := fiber.New(fiber.Config{
 		BodyLimit: parsedMaxFileSize * 1024 * 1024,
 	})
-
-	app.Use(basicauth.New(basicauth.Config{
-		Users:           getUsers(authList),
-		ContextUsername: "_user",
-		ContextPassword: "_pass",
+	app.Use(logger.New(logger.Config{
+		Format: "${time} - [${ip}]:${port} ${status} - ${method} ${path}\n",
 	}))
+	app.Use(compress.New())
+	app.Use(limiter.New(limiter.Config{
+		Max:               100,
+		Expiration:        30 * time.Second,
+		LimiterMiddleware: limiter.SlidingWindow{},
+	}))
+
+	// app.Use(basicauth.New(basicauth.Config{
+	// 	Users:           getUsers(authList),
+	// 	ContextUsername: "_user",
+	// 	ContextPassword: "_pass",
+	// }))
 
 	app.Static("/", STATIC_FILES)
 
-	app.Post("/upload", func(c *fiber.Ctx) error {
-		file, err := c.FormFile(msgtypeMedia)
-		if err != nil {
-			log.Println("formfile:", err)
-			return fiber.ErrBadRequest
-		}
-		f, err := file.Open()
-		if err != nil {
-			log.Println("fileOpen:", err)
-			return fiber.ErrInternalServerError
-		}
-		h := sha256.New()
-		if _, err := io.Copy(h, f); err != nil {
-			log.Println("filecopy:", err)
-			return fiber.ErrInternalServerError
-		}
-		fileExtension := filepath.Ext(file.Filename)
-		filename := fmt.Sprintf("%s%x%s", USER_UPLOADS, h.Sum(nil), fileExtension)
-		saveDir := STATIC_FILES + filename
-		if err := os.MkdirAll(filepath.Dir(saveDir), 0777); err != nil {
-			log.Println("mkdirAll: ", err)
-			return fiber.ErrInternalServerError
-		}
-		if err := c.SaveFile(file, saveDir); err != nil {
-			log.Println("saveFile: ", err)
-			return fiber.ErrInternalServerError
-		}
-		broadcast <- &message{
-			Author:  getUserF(c),
-			MsgType: msgtypeMedia,
-			Body:    filename,
-		}
-		return nil
-	})
+	// app.Post("/upload", func(c *fiber.Ctx) error {
+	// 	file, err := c.FormFile(msgtypeMedia)
+	// 	if err != nil {
+	// 		log.Println("formfile:", err)
+	// 		return fiber.ErrBadRequest
+	// 	}
+	// 	f, err := file.Open()
+	// 	if err != nil {
+	// 		log.Println("fileOpen:", err)
+	// 		return fiber.ErrInternalServerError
+	// 	}
+	// 	h := sha256.New()
+	// 	if _, err := io.Copy(h, f); err != nil {
+	// 		log.Println("filecopy:", err)
+	// 		return fiber.ErrInternalServerError
+	// 	}
+	// 	fileExtension := filepath.Ext(file.Filename)
+	// 	filename := fmt.Sprintf("%s%x%s", USER_UPLOADS, h.Sum(nil), fileExtension)
+	// 	saveDir := STATIC_FILES + filename
+	// 	if err := os.MkdirAll(filepath.Dir(saveDir), 0777); err != nil {
+	// 		log.Println("mkdirAll: ", err)
+	// 		return fiber.ErrInternalServerError
+	// 	}
+	// 	if err := c.SaveFile(file, saveDir); err != nil {
+	// 		log.Println("saveFile: ", err)
+	// 		return fiber.ErrInternalServerError
+	// 	}
+	// 	broadcast <- &message{
+	// 		Author:  getUserF(c),
+	// 		MsgType: msgtypeMedia,
+	// 		Body:    filename,
+	// 	}
+	// 	return nil
+	// })
 
-	wsGroup := app.Group("/ws")
-	wsGroup.Use(func(c *fiber.Ctx) error {
-		if ws.IsWebSocketUpgrade(c) {
-			return c.Next()
-		}
-		return c.SendStatus(fiber.StatusUpgradeRequired)
-	})
+	// wsGroup := app.Group("/ws")
+	// wsGroup.Use(func(c *fiber.Ctx) error {
+	// 	if ws.IsWebSocketUpgrade(c) {
+	// 		return c.Next()
+	// 	}
+	// 	return c.SendStatus(fiber.StatusUpgradeRequired)
+	// })
 
-	go listenLoop()
+	// go listenLoop()
 
-	wsGroup.Get("/", ws.New(func(c *ws.Conn) {
-		// Unregister on close
-		defer func() {
-			unregister <- c
-			c.Close()
-		}()
+	// wsGroup.Get("/", ws.New(func(c *ws.Conn) {
+	// 	// Unregister on close
+	// 	defer func() {
+	// 		unregister <- c
+	// 		c.Close()
+	// 	}()
 
-		// Register
-		register <- c
+	// 	// Register
+	// 	register <- c
 
-		// Listen for messages
-		for {
-			msgType, msg, err := c.ReadMessage()
-			if err != nil {
-				return
-			}
+	// 	// Listen for messages
+	// 	for {
+	// 		msgType, msg, err := c.ReadMessage()
+	// 		if err != nil {
+	// 			return
+	// 		}
 
-			if msgType == ws.TextMessage {
-				broadcast <- &message{
-					Author:  getUserW(c),
-					MsgType: msgTypeText,
-					Body:    string(msg),
-				}
-			}
-		}
-	}))
-
-	log.Fatal(app.Listen(":" + addr))
+	// 		if msgType == ws.TextMessage {
+	// 			broadcast <- &message{
+	// 				Author:  getUserW(c),
+	// 				MsgType: msgTypeText,
+	// 				Body:    string(msg),
+	// 			}
+	// 		}
+	// 	}
+	// }))
+	log.Fatal(
+		app.Listen(":" + addr),
+		// app.Listen(":" + addr),
+	)
 }
 
 type client struct {

@@ -8,12 +8,12 @@ mkShell {
     go-tools
     gopls
     go-outline
-    gocode
     gopkgs
     gocode-gomod
     godef
     golint
     typescript
+    nodejs_20
   ];
 
   shellHook = ''
